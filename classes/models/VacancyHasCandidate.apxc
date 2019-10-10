@@ -1,0 +1,46 @@
+public class VacancyHasCandidate {
+    public Boolean isChecked {get; set;}
+	public VacancyHasCandidate__c model = null;
+    
+    public VacancyHasCandidate(VacancyHasCandidate__c VacancyHasCandidateObject) {
+        this.model = VacancyHasCandidateObject;
+        this.isChecked = false;
+    }
+    
+     public VacancyHasCandidate__c getModel() {
+        return this.model;
+    }   
+    
+    public static VacancyHasCandidate__c getOne(ID candidateId, ID vacancyId) {
+        List<VacancyHasCandidate__c> vacancyHasCandidateObject = [SELECT Id, Name, Vacancy__c, Candidate__c 
+			FROM VacancyHasCandidate__c 
+			WHERE Candidate__c = :candidateId and Vacancy__c = :vacancyId
+			LIMIT 1
+		];
+        if (vacancyHasCandidateObject.size() > 0) {
+            return vacancyHasCandidateObject[0];
+        }
+        return null;
+    }
+    
+    public static List<VacancyHasCandidate__c> getAllByCandidateId(ID candidateId) {
+        List<VacancyHasCandidate__c> vacancyHasCandidateObject = [SELECT Id, Name, Candidate__c, Vacancy__c
+			FROM VacancyHasCandidate__c
+			WHERE Candidate__c = :candidateId];
+        return vacancyHasCandidateObject;
+    }
+
+    public static List<VacancyHasCandidate__c> getAllVerifiedCandidateByVacancyId(ID vacancyId) {
+        List<VacancyHasCandidate__c> vacancyHasCandidateObject = [SELECT Id, Name, Candidate__c, Vacancy__c
+			FROM VacancyHasCandidate__c 
+			WHERE Vacancy__c = :vacancyId AND Candidate__r.Status__c = :Candidate.CANDIDATE_STATUS_VALIDATED];
+        return vacancyHasCandidateObject;
+    }
+    
+    public static List<VacancyHasCandidate__c> getAllByVacancyId(ID vacancyId) {
+        List<VacancyHasCandidate__c> vacancyHasCandidateObject = [SELECT Id, Name, Candidate__c, Vacancy__c
+			FROM VacancyHasCandidate__c 
+			WHERE Vacancy__c = :vacancyId];
+        return vacancyHasCandidateObject;        
+    }
+}

@@ -1,0 +1,59 @@
+public class Candidate {
+    public static String CANDIDATE_STATUS_HIRED = 'Hired';
+    public static String CANDIDATE_STATUS_DISQUALIFIED = 'Disqualified';   
+    public static String CANDIDATE_STATUS_VALIDATED = 'Validated by HR';
+    public Boolean isChecked {get; set;}
+    public Candidate__c model {get; set;}
+    public Map<Id, VacancyHasCandidate__c> vacancyHasCandidateList {get; set;}
+    
+    public Candidate(Candidate__c CandidateObject) {
+        this.vacancyHasCandidateList = new Map<Id, VacancyHasCandidate__c>();
+        this.model = CandidateObject;
+        this.isChecked = false;
+        if (this.model.VacancyHasCandidates__r.size() > 0) {
+            this.vacancyHasCandidateList = new Map<Id, VacancyHasCandidate__c>(this.model.VacancyHasCandidates__r);
+        }
+    }
+    
+    public Candidate__c getModel() {
+        return this.model;
+    }
+    
+    public static List<Candidate__c> getAllWithValidatedStatus() {
+        List<Candidate__c> results = [
+            SELECT Id, Name, FirstName__c, LastName__c, Email__c, Location__c, Salary__c,
+            (select Vacancy__c from VacancyHasCandidates__r)
+            FROM Candidate__c
+            WHERE Status__c = :Candidate.CANDIDATE_STATUS_VALIDATED
+            ORDER BY LastName__c ASC
+        ];
+        return results;
+    }
+    
+    public static Candidate__c getOneById(ID candidateId) {
+		List<Candidate__c> candidateList = [select Id, Name, Status__c from Candidate__c where Id = :candidateId];
+        return candidateList[0];
+    }
+    
+    public static List<VacancyHasCandidate__c> getCandidateObjectsByIds(Set<ID> candidatesIdForDelete, ID vacancyId) {
+    	List<VacancyHasCandidate__c> result = [
+            select Id, Name, Candidate__c 
+            from VacancyHasCandidate__c 
+            where Candidate__c in :candidatesIdForDelete and Vacancy__c = :vacancyId
+        ];
+        return result;
+    }
+    
+    public static List<Candidate__c> getCandidatesAssignedOnVac(ID vacancyId) {
+        List<Candidate__c> result = Database.query(
+            'SELECT Candidate__c FROM VacancyHasCandidate__C WHERE Vacancy__c = :vacancyId'
+        );
+        return result;
+    }
+    
+    public static void setDisqualifiedStatusById(ID candidateId) {
+        Candidate__c candidateObject = [select Id, Name from Candidate__c WHERE Id = :candidateId];
+        candidateObject.Status__c = Candidate.CANDIDATE_STATUS_DISQUALIFIED;
+        update candidateObject;
+    }
+}

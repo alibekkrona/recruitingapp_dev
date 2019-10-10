@@ -1,0 +1,171 @@
+public class VacancyProcessController {
+    private String VALIDATION_MESSAGE_NO_RECORDS_SELECTED = 'Select one vacancy with one candidate, please';
+    private String SUCCESS_MESSAGE_VACANCY_HAS_BEEN_APPROVED = 'Vacancy has been approved';
+    private String ERROR_MESSAGE_ONLY_ONE_CANDIDATE_CAN_BE_APPROVED = 'Only one candate can be approved on one vacancy';
+    private String SUCESS_MESSAGE = 'Operation was success';
+    public List<Vacancy> vacancyList = new List<Vacancy>();
+    public List<String> errors = new List<String>();
+
+    public List<String> getErrors() {
+        return this.errors;
+    }
+    
+    public void clearErrors() {
+        this.errors.clear();
+    }
+    
+    public void addError(String errorMessage) {
+        this.errors.add(errorMessage);
+    }
+    
+    public List<Vacancy> getVacancyList() {
+		this.vacancyList.clear();
+        List<Vacancy__c> vacancyObjectList = Vacancy.getAllByStatusInProcessWithCandidates();
+		for (Vacancy__c vacancyObject : vacancyObjectList) {
+            Vacancy vacancy = new Vacancy(vacancyObject);
+			this.vacancyList.add(vacancy);
+        }
+        return this.vacancyList;
+    }
+    
+    public void validateVacancyList(String scenario) {
+        switch on scenario { 
+            when 'RejectCandidates' {
+                Integer countSelectedCandidate = 0;
+                for (Vacancy vacancy : this.vacancyList) {
+                    for (VacancyHasCandidate vacancyHasCandidate : vacancy.vacancyHasCandidateList) {
+                        if (vacancyHasCandidate.isChecked) {
+                        	countSelectedCandidate++;
+                        }    
+                    }  
+                }
+                if (countSelectedCandidate == 0) {
+                    this.addError('Select at least one candidate');
+                }
+            }
+            when 'ApproveVacancies' {
+                Map<ID, VacancyHasCandidate> selectedVacancyHasCandidate = new Map<ID, VacancyHasCandidate>();
+                for (Vacancy vacancy : this.vacancyList) {
+                    Integer countAssignedCandidatesToVacancy = 0;
+                    for (VacancyHasCandidate vacancyHasCandidate : vacancy.vacancyHasCandidateList) {
+                        if (vacancyHasCandidate.isChecked) {
+                            countAssignedCandidatesToVacancy++;
+                            // Check situation when one candidate assigned to few vacancies
+                            if (selectedVacancyHasCandidate.containsKey(vacancyHasCandidate.getModel().Candidate__c)) {
+								this.addError('Candidate ' + vacancyHasCandidate.getModel().Candidate__r.FirstName__c + ' ' + 
+                                    vacancyHasCandidate.getModel().Candidate__r.LastName__c + ' ' + 
+                                    'tried to approve to few vacancies');
+                            } else {
+                        		selectedVacancyHasCandidate.put(vacancyHasCandidate.getModel().Candidate__c, vacancyHasCandidate);
+                            }
+                        }    
+                    }
+                    // Check situation when few candidates assienged to one vacancy
+					if (countAssignedCandidatesToVacancy > 1) {
+						this.addError('Tried to assign few canddiates to ' +  
+							vacancy.getModel().Title__c + ' vacancy');
+	                }
+                }
+                if (selectedVacancyHasCandidate.size() == 0) {
+                    this.addError('Select at least one candidate');
+                }
+            }
+            when 'CancelVacancies' { 
+                Integer countSelectedVacancies = 0;
+                for (Vacancy vacancy : this.vacancyList) {
+					if (vacancy.isChecked) {
+						countSelectedVacancies++;
+					}
+                }
+                if (countSelectedVacancies == 0) {
+                    this.addError('Select at least one vacancy');
+                }
+            }
+    	}
+    }
+        
+    /*******************************
+     *  ACTIONS
+     *******************************/
+    public PageReference approveCandidates() {
+		this.validateVacancyList('ApproveVacancies');
+        if (this.errors.size() == 0) {
+            for (Vacancy vacancy : this.vacancyList) {
+                VacancyHasCandidate checkedVacancyHasCandidate = vacancy.getCheckedVacancyHasCandidate();
+                // Process vacancies with checked candidates
+                if (checkedVacancyHasCandidate != null) {
+                    vacancy.approveCandidate(checkedVacancyHasCandidate);
+                    List<VacancyHasCandidate__c> vacancyHasCandidateList = new List<VacancyHasCandidate__c>();                
+                    // Delete other relations with Vacancy              
+                    ID vacancyId = checkedVacancyHasCandidate.model.Vacancy__c;
+                    vacancyHasCandidateList = VacancyHasCandidate.getAllByVacancyId(vacancyId);
+                	delete vacancyHasCandidateList;
+                    // Delete other relations with Candidate and check connected Vacancy
+                    ID candidateId = checkedVacancyHasCandidate.model.Candidate__c;
+                    vacancyHasCandidateList = VacancyHasCandidate.getAllByCandidateId(candidateId);
+                    for (VacancyHasCandidate__c vacancyHasCandidateObject : vacancyHasCandidateList) {
+                        List<VacancyHasCandidate__c> relations = VacancyHasCandidate.getAllByVacancyId(vacancyId);
+                        if (relations.size() == 0) {
+                            vacancyId = vacancyHasCandidateObject.Vacancy__c;
+                            Vacancy__c vacancyObject = [select Id, Name, Status__c from Vacancy__c where Id = :vacancyId];
+                            vacancyObject.Status__c = 'New';
+                            update vacancyObject;
+                        }
+                        delete vacancyHasCandidateObject;
+                    }                   
+                }
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.CONFIRM, this.SUCESS_MESSAGE));
+            }
+        } else {
+            for (String error : this.errors) {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, error));    
+            }    
+        }  
+        this.clearErrors();
+        return null;
+    }
+
+    public PageReference rejectCandidates() {
+		this.validateVacancyList('RejectCandidates');     
+        if (this.errors.size() == 0) {
+ 			for (Vacancy vacancy : this.vacancyList) {
+                List<ID> rejectedCandidatesIds = new List<ID>();
+                // Get all rejected candidates ids for all vacancies
+				for (VacancyHasCandidate vacancyHasCandidate : vacancy.vacancyHasCandidateList) {
+                    if (vacancyHasCandidate.isChecked) {
+                        rejectedCandidatesIds.add(vacancyHasCandidate.getModel().Candidate__c);
+                    }
+                }
+                // Disqualified candidates from vacancy
+                if (rejectedCandidatesIds.size() > 0) {
+                	vacancy.disqualifiedCandidatesByIds(rejectedCandidatesIds);
+                    ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.CONFIRM, this.SUCESS_MESSAGE));
+                }
+            }
+        } else {
+            for (String error : this.errors) {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, error));    
+            }    
+        }  
+        this.clearErrors();
+        return null;
+    }
+
+    public PageReference cancelVacancies() {
+        this.validateVacancyList('CancelVacancies');
+        if (this.errors.size() == 0) {
+            for (Vacancy vacancy : this.vacancyList) {
+                if (vacancy.isChecked) {
+            		vacancy.cancelVacancy();
+                }
+            }
+            ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.CONFIRM, this.SUCESS_MESSAGE));
+         } else {
+            for (String error : this.errors) {
+                ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.ERROR, error));
+            }
+        }
+        this.clearErrors();
+        return null;
+    }
+}

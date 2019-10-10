@@ -1,0 +1,96 @@
+public without sharing class CandidatesListControllerExtension {
+    private String VACANCY_STATUS_IN_PROCESS = 'In-Process';
+    private String CANDIDATE_STATUS_VALIDATED = 'Validated by HR';
+    private String OPERATION_MESSAGE_SUCCESS = 'Operation was successfull';
+    private String VACANCY_STATUS_NEW = 'New';
+    public Vacancy__c vacancy {get; private set; }
+    // List of Candidate__c object wrapper
+    public List<Candidate> candidateList = new List<Candidate>();
+    
+    public CandidatesListControllerExtension(ApexPages.StandardController controller) {
+		this.vacancy = (Vacancy__c) controller.getRecord();
+    }
+
+    /**
+     * Select candidate by 'Validate by HR' status using a helper wrapping class 
+     * Candidate.
+     * Create list of Candidate wrapper class.
+     * Set isChecked property
+     */
+    public List<Candidate> getCandidateList() {
+        this.candidateList.clear();
+        List<Candidate__c> candidateObjectList = Candidate.getAllWithValidatedStatus();
+        for (Candidate__c candidateObject : candidateObjectList) {
+            Candidate candidate = new Candidate(candidateObject);
+            // Set isChecked property
+            if (candidateObject.VacancyHasCandidates__r.size() > 0) {
+                for (VacancyHasCandidate__c vcRelation : candidateObject.VacancyHasCandidates__r) {
+                    if (vcRelation.Vacancy__c == this.vacancy.Id) {
+                        candidate.isChecked = true;
+                        break;
+                    }
+                }
+            }
+            this.candidateList.add(candidate);
+        }
+        return this.candidateList;
+    }
+     
+    public void processUnassignedCandidates(Set<ID> candidatesIdForDelete) {
+		// Process unassigned candidtes
+        if (candidatesIdForDelete.size() > 0) {
+            delete Candidate.getCandidateObjectsByIds(candidatesIdForDelete, this.vacancy.id);
+        }
+    }
+    
+    public void processAssignedCandidates(List<VacancyHasCandidate__c> candidateObjectList) {
+        // Process assigned candidates       
+        if (candidateObjectList.size() > 0) {
+            upsert candidateObjectList;
+        }
+    }
+    
+    public void updateCurrentVacancyStatus(List<VacancyHasCandidate__c> assignedCandidatesList) {
+		// Update vacancy status
+        if (assignedCandidatesList.size() > 0) {
+            this.vacancy.Status__c = this.VACANCY_STATUS_IN_PROCESS;
+        } else {
+            this.vacancy.Status__c = this.VACANCY_STATUS_NEW;
+        }
+        update this.vacancy;
+    }
+    
+    /******************************************
+     * ACTIONS
+     ******************************************/
+    public PageReference assignCandidatesToVacancy() {
+        Set<ID> candidatesIdForDelete = new Set<ID>();
+ 		List<VacancyHasCandidate__c> recordsForUpsert = new List<VacancyHasCandidate__c>();
+        // Process checked and unchecked candidates
+        for (Candidate candidate : this.candidateList) {
+            ID candidateId = ((Candidate__c) candidate.getModel()).Id;
+            if (candidate.isChecked == true) {
+				VacancyHasCandidate__c vcNewJunction = new VacancyHasCandidate__c();
+				// Check if exists key in VacancyHasCandidate                
+                VacancyHasCandidate__c vacancyHasCandidateObject = VacancyHasCandidate.getOne(candidateId, this.vacancy.Id);
+                if (vacancyHasCandidateObject != null) {
+					recordsForUpsert.add(vacancyHasCandidateObject);
+                } else {
+                    vcNewJunction.Candidate__c = candidateId;
+                    vcNewJunction.Vacancy__c = this.vacancy.Id;
+                    recordsForUpsert.add(vcNewJunction);
+                }
+            } else {
+                // Create set candidate ids for delete from junction object
+				candidatesIdForDelete.add(candidateId);
+            }
+        }       
+        this.processUnassignedCandidates(candidatesIdForDelete);
+       	this.processAssignedCandidates(recordsForUpsert);
+        this.updateCurrentVacancyStatus(recordsForUpsert);
+        ApexPages.addMessage(new ApexPages.Message(ApexPages.Severity.CONFIRM, this.OPERATION_MESSAGE_SUCCESS));
+        return null;
+    }
+    
+    
+}

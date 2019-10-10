@@ -1,0 +1,37 @@
+<apex:page showHeader="false" sidebar="false" standardController="Vacancy__c" extensions="CandidatesListControllerExtension" lightningStylesheets="true"> 
+    <style>
+        .dataCol {
+            width: 99% !important;
+        }
+    </style>
+    <apex:form id="assignCandidateToVacancyForm">    
+        <apex:pageBlock title="Selected Candidates" id="candidates_list">
+                <apex:pageBlockButtons rendered="{! candidateList.size > 0}" location="top">
+                    <apex:commandButton value="Assign Candidates" action="{! assignCandidatesToVacancy}" reRender="errorMessageBox, pageBlockCandidates" />
+                </apex:pageBlockButtons>
+                <apex:outputText value="There are no records to display" rendered="{! candidateList.size == 0}" />
+                <apex:pageMessages id="errorMessageBox" />
+                <apex:pageBlockSection id="pageBlockCandidates">
+                    <apex:pageBlockTable value="{! candidateList }" var="candidate" rendered="{! candidateList.size > 0}">
+                        <apex:column >
+                            <apex:inputCheckbox value="{! candidate.isChecked }" />
+                        </apex:column>
+                        <apex:column >
+							<apex:facet name="header">Candidate Name</apex:facet>                            
+                            <apex:outputLink value="{! URLFOR($Action.Candidate__c.View, candidate.model.Id)}" target="_blank">
+                                {! candidate.model.FirstName__c }
+                                {! candidate.model.LastName__c }                                
+                            </apex:outputLink>
+                        </apex:column>
+                        <apex:column value="{! candidate.model.Email__c }" />
+                        <apex:column value="{! candidate.model.Location__c }" />                        
+                        <apex:column >
+                            <apex:outputText value="{0, Number, Currency }" >
+                                <apex:param value="{! candidate.model.Salary__c }"/>
+                            </apex:outputText>
+                        </apex:column>
+                    </apex:pageBlockTable>           
+                </apex:pageBlockSection>                                     
+        </apex:pageBlock>        
+    </apex:form>        
+</apex:page>

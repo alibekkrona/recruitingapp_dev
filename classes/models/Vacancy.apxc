@@ -1,0 +1,97 @@
+public class Vacancy {
+    public static String VACANCY_STATUS_CLOSED = 'Closed';
+    public static String VACANCY_STATUS_IN_PROCESS = 'In-Process';
+    public static String VACANCY_STATUS_CANCELLED = 'Cancelled';
+    public static String VACANCY_STATUS_NEW = 'New';
+    
+	public Boolean isChecked {get; set;}
+	private Vacancy__c model = null;
+    public List<VacancyHasCandidate> vacancyHasCandidateList {get; set;}
+    
+    public Vacancy(Vacancy__c vacancyObject) {
+        this.model = vacancyObject;
+        this.vacancyHasCandidateList = new List<VacancyHasCandidate>();
+        this.isChecked = false;
+        if (vacancyObject.VacancyHasCandidates__r.size() > 0) {
+            for (VacancyHasCandidate__c item : vacancyObject.VacancyHasCandidates__r) {
+                VacancyHasCandidate vacancyHasCandidate = new VacancyHasCandidate(item);
+                this.vacancyHasCandidateList.add(vacancyHasCandidate);
+            }
+        }
+    }
+    
+	public Vacancy__c getModel() {
+        return this.model;
+    }   
+    
+    public static List<Vacancy__c> getAllByStatusInProcessWithCandidates() {
+        return [
+            SELECT Id, Name, Title__c, Status__c,
+            (
+                select
+                	Candidate__r.Name,
+                    Candidate__r.FirstName__c,
+                    Candidate__r.LastName__c,
+                    Candidate__r.Status__c,
+                    Candidate__c,
+                	Vacancy__c
+            	from VacancyHasCandidates__r
+				where Candidate__r.Status__c = :Candidate.CANDIDATE_STATUS_VALIDATED
+            )
+            FROM Vacancy__c
+            WHERE Status__c = :Vacancy.VACANCY_STATUS_IN_PROCESS
+        ];
+    }
+    
+    public void disqualifiedCandidatesByIds(List<ID> rejectedCandidatesIds) {
+        for (ID candidateId : rejectedCandidatesIds) {
+            // Delete Candiate from all vacancies
+            List<VacancyHasCandidate__c> vacancyHasCandidateList = vacancyHasCandidate.getAllByCandidateId(candidateId); 
+            delete vacancyHasCandidateList;
+            // Set disqualified status from candidate.
+            Candidate.setDisqualifiedStatusById(candidateId);
+        }
+		// Update Vacancy Status.
+		List<VacancyHasCandidate__c> vcList = vacancyHasCandidate.getAllByVacancyId(this.model.Id);
+        if (vcList.size() == 0) {
+            this.model.Status__c = Vacancy.VACANCY_STATUS_NEW;
+            update this.model;
+        }
+    }
+    
+    public void cancelVacancy() {
+        // Delete all relation from vacancy
+        List<VacancyHasCandidate__c> vacancyHasCandidateList = vacancyHasCandidate.getAllByVacancyId(this.model.Id); 
+        delete vacancyHasCandidateList;
+        // Update vacancy status
+        this.model.Status__c = Vacancy.VACANCY_STATUS_CANCELLED;
+        update this.model;
+    }
+    
+    public VacancyHasCandidate getCheckedVacancyHasCandidate() {
+		VacancyHasCandidate checkedVacancyHasCandidate = null;
+        for (VacancyHasCandidate vacancyHasCandidate : this.vacancyHasCandidateList) {
+            if (vacancyHasCandidate.isChecked) {
+                checkedVacancyHasCandidate = vacancyHasCandidate;
+                break;
+            }
+        }
+        return checkedVacancyHasCandidate;
+    }
+    
+    public void approveCandidate(VacancyHasCandidate vacancyHasCandidate) {
+    	// Update candidate status
+    	ID candidateId = vacancyHasCandidate.model.Candidate__c;
+    	Candidate__c candidateObject = Candidate.getOneById(candidateId);
+        candidateObject.Status__c = Candidate.CANDIDATE_STATUS_HIRED;
+        update candidateObject;
+    	// Update vacancy status and assign candidate to vacancy
+    	this.model.Status__c = Vacancy.VACANCY_STATUS_CLOSED;
+        this.model.Candidate__c = vacancyHasCandidate.getModel().Candidate__c;
+        update this.model;   	
+    }
+    
+    public static Vacancy__c getOneByVacancyId(Id vacancyId) {
+        return [select Id, Name from Vacancy__c where Id = :vacancyId];
+    }
+}

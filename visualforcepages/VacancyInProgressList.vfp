@@ -1,0 +1,39 @@
+<apex:page controller="VacancyProcessController" lightningStylesheets="true">
+    <apex:pageMessages id="messageBox"/>
+    <apex:form >
+        <apex:pageBlock Title="Vacancies For Process">
+            <apex:pageBlockSection Title="Vacancies for process">
+                <apex:outputText value="There are no records to display" rendered="{! vacancyList.size == 0}" />                
+                <apex:dataTable value="{! vacancyList }" var="vacancy" id="vacancyListBox">
+                    <apex:column >
+                        <apex:inputCheckbox value="{! vacancy.isChecked }" />
+                    </apex:column>
+                    <apex:column >
+                        <apex:facet name="header">Vacancy Title</apex:facet>                        
+                        <apex:outputLink value="{! URLFOR($Action.Vacancy__c.View, vacancy.model.Id) }" target="_blank">{! vacancy.model.Title__c }</apex:outputLink>
+                    </apex:column>
+                    <apex:column >
+                        <apex:facet name="header">Candidates</apex:facet>
+                        <apex:dataTable value="{! vacancy.vacancyHasCandidateList }" var="vacancyHasCandidate">
+                            <apex:column >
+                                <apex:inputCheckbox value="{! vacancyHasCandidate.isChecked }" />
+                            </apex:column>
+                            <apex:column >
+                                <apex:facet name="header">Candidate Name</apex:facet>
+                                <apex:outputLink value="{! URLFOR($Action.Candidate__c.View, vacancyHasCandidate.model.Candidate__r.Id) }" target="_blank">
+                                    {! vacancyHasCandidate.model.Candidate__r.FirstName__c}
+                                    {! vacancyHasCandidate.model.Candidate__r.LastName__c}
+								</apex:outputLink>                                    
+                            </apex:column>
+                        </apex:dataTable>
+                    </apex:column>
+                </apex:dataTable>
+            </apex:pageBlockSection>
+            <apex:pageBlockButtons rendered="{! vacancyList.size > 0 }">
+                <apex:commandButton action="{! approveCandidates }" value="Approve Vacancies" reRender="messageBox, vacancyListBox" />
+                <apex:commandButton action="{! rejectCandidates }" value="Reject Candidates" reRender="messageBox, vacancyListBox" />
+                <apex:commandButton action="{! cancelVacancies }" value="Cancel Vacancies" reRender="messageBox, vacancyListBox" />
+            </apex:pageBlockButtons>
+        </apex:pageBlock>
+    </apex:form>
+</apex:page>

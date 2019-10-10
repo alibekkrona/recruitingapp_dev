@@ -1,0 +1,13 @@
+trigger VacancyTrigger on Vacancy__c (before insert, before update) {
+    if (Trigger.isInsert) {
+       for(Vacancy__c vacancy : Trigger.New) {
+            vacancy.Status__c = 'New';
+        }     
+    } else if (Trigger.isUpdate) {
+		for(Vacancy__c vacancy : Trigger.New) {
+			if (vacancy.Responsible__c != null) {
+				vacancy.OwnerId = vacancy.Responsible__c;
+           }
+        }             
+	}
+}
