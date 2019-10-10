@@ -1,0 +1,262 @@
+@IsTest
+public class TestCandidatesListControllerExtension {
+    @TestSetup static void setup() {
+		// Create user with Manager role
+		Profile managerProfile = [select Id from Profile where Name = 'ManagerProfile'];        
+        User managerUser = new User(
+            Alias='maus',
+            Email = 'maus@recruitingapp.com',
+            FirstName = 'Manager',
+            LastName = 'Manager',
+            Username = 'maus@recruitingapp.com',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            TimeZoneSidKey = 'America/Los_Angeles'
+        );
+        managerUser.ProfileId = managerProfile.Id;
+        insert managerUser;
+        // Create user with Recruiter role
+        Profile recruiterProfile = [select Id from Profile where Name = 'RecruiterProfile'];        
+        UserRole recruiterRole = [select Id from UserRole where Name = 'Recruiter'];        
+        User recruiterUser = new User(
+            Alias='reus',
+            Email = 'reus@recruitingapp.com',
+            FirstName = 'Recruiter',
+            LastName = 'Recruiter',
+            Username = 'reus@recruitingapp.com',
+            EmailEncodingKey = 'UTF-8',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            TimeZoneSidKey = 'America/Los_Angeles'
+        );
+        recruiterUser.ProfileId = recruiterProfile.Id;
+        recruiterUser.UserRoleId = recruiterRole.Id;
+        insert recruiterUser;
+        // Login as Manager User.
+        System.runAs(managerUser) {
+            Vacancy__c vacancy = new Vacancy__c( Responsible__c = recruiterUser.Id);
+            insert vacancy;
+        }
+    }
+	
+    // Assign Candidate to vacancy
+    private static testMethod void TestAssignCandidateToVacancy() {
+		User managerUser = [select Id from User where Alias = 'maus' LIMIT 1];
+        User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];
+		// Create vacancy
+		Vacancy__c vacancy = new Vacancy__c(
+            Title__c = 'Vacancy1', 
+            PromoDescription__c = 'Test promo description', 
+            Level__c = 'd0', 
+            Responsible__c = recruiterUser.Id
+        );
+        insert vacancy;
+		// Create candidate
+		Candidate__c can = new Candidate__c(
+            FirstName__c = 'Candidate1', 
+            LastName__c = 'Candidate2', 
+            Location__c = 'Kyiv', 
+            Status__c = 'Validated by HR',
+            Email__c = 'candidate1@candidate1.com',
+            Recruiter__c = recruiterUser.Id
+        );
+        insert can;
+		// Assign Candidate to vacancy
+		PageReference pref = new PageReference('/' + vacancy.Id);
+        pref.getParameters().put('id', vacancy.Id);
+        Test.setCurrentPage(pref);
+        ApexPages.StandardController vacancyStandardController = new ApexPages.StandardController(vacancy);
+        CandidatesListControllerExtension candidatesListControllerExtension = 
+            new CandidatesListControllerExtension(vacancyStandardController);
+        Test.setCurrentPageReference(pref);
+        candidatesListControllerExtension.getCandidateList();
+        candidatesListControllerExtension.candidateList[0].isChecked = true;
+        candidatesListControllerExtension.assignCandidatesToVacancy();
+        
+        // Check getCandidateObjectsByIds
+        Set<ID> candidatesIds = new Set<ID>();
+        candidatesIds.add(can.Id);
+        List<VacancyHasCandidate__c> candidateList = Candidate.getCandidateObjectsByIds(candidatesIds, vacancy.Id);
+        // Assert candidate
+        System.assertEquals(candidateList[0].Candidate__c, can.Id);
+        // Assert vacancy params
+		System.assertEquals('In-Process', vacancy.Status__c);
+        System.assertEquals(recruiterUser.Id, vacancy.Responsible__c);
+        
+        // Assert setDisqualifiedStatusById
+        Candidate.setDisqualifiedStatusById(can.Id);
+        can = Candidate.getOneById(can.Id);
+        System.assertEquals(can.Status__c, Candidate.CANDIDATE_STATUS_DISQUALIFIED);
+        
+        // Assert CandidateListControllerExtenstion
+        candidatesListControllerExtension.processUnassignedCandidates(candidatesIds);
+    }
+
+    private static testMethod void testCandidateClass() {
+        User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];        
+        // Create candidate
+		Candidate__c can = new Candidate__c(
+            FirstName__c = 'Candidate1', 
+            LastName__c = 'Candidate2', 
+            Location__c = 'Kyiv', 
+            Status__c = 'Validated by HR',
+            Email__c = 'candidate1@candidate1.com',
+            Recruiter__c = recruiterUser.Id
+        );
+        insert can;
+        Candidate__c candidateObject = Candidate.getOneById(can.Id);
+        System.assertEquals(can.Id, candidateObject.Id);
+    }
+    
+    private static testMethod void TestVacancyCencel() {
+    }
+    
+    // Check that recruiter user don't have manager permissions
+    private static testMethod void TestCondidatesListControllerExtensionJustCreatedVacancyAccess() {
+		User managerUser = [select Id from User where Alias = 'maus' LIMIT 1];
+        User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];
+        Vacancy__c vacancy;
+        List<Vacancy__c> vacancyCreatedByManagerUser;
+        // Manager user create vacancy
+        System.runAs(managerUser) {
+            vacancy = new Vacancy__c();
+            insert vacancy;
+        }
+        // Recruiter user try to read this vacancy
+        System.runAs(recruiterUser) {
+            vacancyCreatedByManagerUser = [select Status__c from Vacancy__c where Id =: vacancy.Id LIMIT 1];
+        }
+        // Check results
+        System.assertEquals(0, vacancyCreatedByManagerUser.size());
+    }
+    
+    /*****************************
+     *  Test Vacancy Controller
+     * ***************************/
+    private static testMethod void TestVacancyProcessControllerCancelVacancy() {
+        User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];        
+        // Create vacancy
+		Vacancy__c vacancy = new Vacancy__c(
+            Title__c = 'Vacancy1', 
+            PromoDescription__c = 'Test promo description', 
+            Level__c = 'd0', 
+            Responsible__c = recruiterUser.Id
+        );
+        insert vacancy;
+		// Create candidate
+		Candidate__c can = new Candidate__c(
+            FirstName__c = 'Candidate1', 
+            LastName__c = 'Candidate2', 
+            Location__c = 'Kyiv', 
+            Status__c = 'Validated by HR',
+            Email__c = 'candidate1@candidate1.com',
+            Recruiter__c = recruiterUser.Id
+        );
+        insert can;
+        PageReference pref = new PageReference('/' + vacancy.Id);
+        pref.getParameters().put('id', vacancy.Id);
+        Test.setCurrentPage(pref);
+        // Assign candidate to vacancy
+        ApexPages.StandardController vacancyStandardController = new ApexPages.StandardController(vacancy);
+        CandidatesListControllerExtension candidatesListControllerExtension = 
+            new CandidatesListControllerExtension(vacancyStandardController);
+        Test.setCurrentPageReference(pref);
+        candidatesListControllerExtension.getCandidateList();
+        candidatesListControllerExtension.candidateList[0].isChecked = true;
+        candidatesListControllerExtension.assignCandidatesToVacancy();
+        
+        // Cencel vacancy
+        VacancyProcessController vacancyProcess = new VacancyProcessController();
+  		Test.setCurrentPageReference(pref);
+        
+        vacancyProcess.getVacancyList();
+        vacancyProcess.vacancyList[0].isChecked = true;
+        vacancyProcess.cancelVacancies();
+
+    }
+
+    private static testMethod void TestVacancyProcessControllerRejectCandidate() {
+        User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];        
+        // Create vacancy
+		Vacancy__c vacancy = new Vacancy__c(
+            Title__c = 'Vacancy1', 
+            PromoDescription__c = 'Test promo description', 
+            Level__c = 'd0', 
+            Responsible__c = recruiterUser.Id
+        );
+        insert vacancy;
+		// Create candidate
+		Candidate__c can = new Candidate__c(
+            FirstName__c = 'Candidate1', 
+            LastName__c = 'Candidate2', 
+            Location__c = 'Kyiv', 
+            Status__c = 'Validated by HR',
+            Email__c = 'candidate1@candidate1.com',
+            Recruiter__c = recruiterUser.Id
+        );
+        insert can;
+        PageReference pref = new PageReference('/' + vacancy.Id);
+        pref.getParameters().put('id', vacancy.Id);
+        Test.setCurrentPage(pref);
+        // Assign candidate to vacancy
+        ApexPages.StandardController vacancyStandardController = new ApexPages.StandardController(vacancy);
+        CandidatesListControllerExtension candidatesListControllerExtension = 
+            new CandidatesListControllerExtension(vacancyStandardController);
+        Test.setCurrentPageReference(pref);
+        candidatesListControllerExtension.getCandidateList();
+        candidatesListControllerExtension.candidateList[0].isChecked = true;
+        candidatesListControllerExtension.assignCandidatesToVacancy();
+        
+        // Cencel vacancy
+        VacancyProcessController vacancyProcess = new VacancyProcessController();
+  		Test.setCurrentPageReference(pref);
+        
+        vacancyProcess.getVacancyList();
+        vacancyProcess.vacancyList[0].vacancyHasCandidateList[0].isChecked = true;
+        vacancyProcess.rejectCandidates();
+    }        
+    
+    private static testMethod void TestVacancyProcessControllerApproveCandidate() {
+		User recruiterUser = [select Id from User where Alias = 'reus' LIMIT 1];          
+        // Create vacancy
+        User managerUser = [select Id from User where Alias = 'maus' LIMIT 1];
+        Vacancy__c vacancy = new Vacancy__c(
+            Title__c = 'Vacancy1', 
+            PromoDescription__c = 'Test promo description', 
+            Level__c = 'd0', 
+            Responsible__c = recruiterUser.Id
+        );
+        insert vacancy;
+		// Create candidate
+        Candidate__c can = new Candidate__c(
+            FirstName__c = 'Candidate1', 
+            LastName__c = 'Candidate2', 
+            Location__c = 'Kyiv', 
+            Status__c = 'Validated by HR',
+            Email__c = 'candidate1@candidate1.com',
+            Recruiter__c = recruiterUser.Id
+        );
+        insert can;
+        PageReference pref = new PageReference('/' + vacancy.Id);
+        pref.getParameters().put('id', vacancy.Id);
+        Test.setCurrentPage(pref);
+        // Assign candidate to vacancy
+        ApexPages.StandardController vacancyStandardController = new ApexPages.StandardController(vacancy);
+        CandidatesListControllerExtension candidatesListControllerExtension = 
+            new CandidatesListControllerExtension(vacancyStandardController);
+        Test.setCurrentPageReference(pref);
+        candidatesListControllerExtension.getCandidateList();
+        candidatesListControllerExtension.candidateList[0].isChecked = true;
+        candidatesListControllerExtension.assignCandidatesToVacancy();
+        
+        // Cencel vacancy
+        VacancyProcessController vacancyProcess = new VacancyProcessController();
+  		Test.setCurrentPageReference(pref);
+        
+        vacancyProcess.getVacancyList();
+        vacancyProcess.vacancyList[0].vacancyHasCandidateList[0].isChecked = true;
+        vacancyProcess.approveCandidates();
+    }           
+    
+}
